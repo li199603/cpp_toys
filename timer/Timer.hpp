@@ -1,3 +1,7 @@
+/*
+reference:
+https://github.com/eglimi/cpptime
+*/
 #pragma once
 #include <algorithm>
 #include <atomic>
@@ -45,7 +49,6 @@ class Timer
     ~Timer();
     uint64_t add(uint64_t period_ms, bool repeated, TaskFunc func);
     bool remove(uint64_t);
-    void stop();
 };
 
 Timer::Timer() : m_stop(false)
@@ -55,7 +58,9 @@ Timer::Timer() : m_stop(false)
 
 Timer::~Timer()
 {
-    stop();
+    m_stop.store(true);
+    m_condition.notify_all();
+    m_worker.join();
 }
 
 uint64_t Timer::add(uint64_t period_ms, bool repeated, TaskFunc func)
@@ -83,13 +88,6 @@ bool Timer::remove(uint64_t id)
         flag = true;
     }
     return flag;
-}
-
-void Timer::stop()
-{
-    m_stop.store(true);
-    m_condition.notify_all();
-    m_worker.join();
 }
 
 void Timer::run()
