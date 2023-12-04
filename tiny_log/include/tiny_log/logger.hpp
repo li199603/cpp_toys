@@ -28,7 +28,8 @@ class Logger
     std::vector<SinkPtr> m_sinks;
     std::atomic<int> m_level;
 
-    bool shoud_log(Level level);
+    bool should_log(Level level);
+    // bool should_backtrace();
     template <typename... Args> void log(Level level, fmt::format_string<Args...> fstring, Args &&...args);
     void log_it(const Message &msg);
 
@@ -37,9 +38,9 @@ class Logger
     Logger(std::string name, SinkPtr sink_ptr);
     Logger(std::string name, std::initializer_list<SinkPtr> sinks);
     Logger(const Logger &other);
+    ~Logger() = default;
     Logger &operator=(Logger other);
     void swap(Logger &other);
-    ~Logger();
 
     template <typename Arg> void debug(const Arg &arg);
     template <typename Arg> void info(const Arg &arg);
@@ -56,6 +57,10 @@ class Logger
     Level get_level();
     std::string get_name();
     std::vector<SinkPtr> &get_sinks();
+
+    // void enable_backtrace(size_t num_msg);
+    // void disable_backtrace();
+    // void dump_backtrace();
 };
 
 Logger::Logger(std::string name) : Logger(std::move(name), {})
@@ -87,10 +92,6 @@ void Logger::swap(Logger &other)
     m_sinks.swap(other.m_sinks);
     int tmp_level = m_level.exchange(other.m_level.load());
     other.m_level.store(tmp_level);
-}
-
-Logger::~Logger()
-{
 }
 
 template <typename Arg> void Logger::debug(const Arg &arg)
@@ -133,14 +134,14 @@ template <typename... Args> void Logger::error(fmt::format_string<Args...> fstri
     log(Level::ERROR, fstring, std::forward<Args>(args)...);
 }
 
-bool Logger::shoud_log(Level level)
+bool Logger::should_log(Level level)
 {
     return level >= m_level.load();
 }
 
 template <typename... Args> void Logger::log(Level level, fmt::format_string<Args...> fstring, Args &&...args)
 {
-    if (!shoud_log(level))
+    if (!should_log(level))
     {
         return;
     }
