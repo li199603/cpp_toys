@@ -4,32 +4,30 @@
 #define FMT_HEADER_ONLY
 #endif
 
+#include "common.hpp"
+#include "tiny_log/backtracer.hpp"
+#include "tiny_log/fmt/core.h"
+#include "tiny_log/formatter.hpp"
+#include "tiny_log/sink.hpp"
 #include <atomic>
 #include <initializer_list>
 #include <memory>
 #include <string>
 #include <vector>
 
-#include "common.hpp"
-#include "tiny_log/fmt/core.h"
-#include "tiny_log/formatter.hpp"
-#include "tiny_log/sink.hpp"
-
 namespace tiny_log
 {
 
-using SinkPtr = std::shared_ptr<Sink>;
-using FormatterPtr = std::shared_ptr<Formatter>;
-
 class Logger
 {
-  private:
+  protected:
     std::string m_name;
     std::vector<SinkPtr> m_sinks;
     std::atomic<int> m_level;
+    BackTracer m_backtracer;
 
     bool should_log(Level level);
-    // bool should_backtrace();
+    bool should_traceback();
     template <typename... Args> void log(Level level, fmt::format_string<Args...> fstring, Args &&...args);
     void log_it(const Message &msg);
 
@@ -58,9 +56,9 @@ class Logger
     std::string get_name();
     std::vector<SinkPtr> &get_sinks();
 
-    // void enable_backtrace(size_t num_msg);
-    // void disable_backtrace();
-    // void dump_backtrace();
+    void enable_backtracer(size_t size);
+    void disable_backtracer();
+    void dump_backtracer();
 };
 
 Logger::Logger(std::string name) : Logger(std::move(name), {})
@@ -76,7 +74,8 @@ Logger::Logger(std::string name, std::initializer_list<SinkPtr> sinks)
 {
 }
 
-Logger::Logger(const Logger &other) : m_name(other.m_name)
+Logger::Logger(const Logger &other)
+    : m_name(other.m_name), m_sinks(other.m_sinks), m_level(other.m_level.load()), m_backtracer(other.m_backtracer)
 {
 }
 
@@ -139,16 +138,30 @@ bool Logger::should_log(Level level)
     return level >= m_level.load();
 }
 
+bool Logger::should_traceback()
+{
+    return m_backtracer.enabled();
+}
+
 template <typename... Args> void Logger::log(Level level, fmt::format_string<Args...> fstring, Args &&...args)
 {
-    if (!should_log(level))
+    bool log_flag = should_log(level);
+    bool traceback_flag = should_traceback();
+    if (!log_flag && !traceback_flag)
     {
         return;
     }
     std::shared_ptr<std::string> payload =
         std::make_shared<std::string>(fmt::format(fstring, std::forward<Args>(args)...));
     Message msg(level, payload);
-    log_it(msg);
+    if (traceback_flag)
+    {
+        m_backtracer.push_back(msg);
+    }
+    if (log_flag)
+    {
+        log_it(msg);
+    }
 }
 
 void Logger::log_it(const Message &msg)
@@ -186,6 +199,28 @@ std::string Logger::get_name()
 std::vector<SinkPtr> &Logger::get_sinks()
 {
     return m_sinks;
+}
+
+void Logger::enable_backtracer(size_t size)
+{
+    m_backtracer.enable(size);
+}
+
+void Logger::disable_backtracer()
+{
+    m_backtracer.disable();
+}
+
+void Logger::dump_backtracer()
+{
+    if (m_backtracer.enabled())
+    {
+        log_it(Message(Level::INFO,
+                       std::make_shared<std::string>("****************** Backtrace Start ******************")));
+        m_backtracer.foreach_pop([this](const Message &msg) { log_it(msg); });
+        log_it(Message(Level::INFO,
+                       std::make_shared<std::string>("******************* Backtrace End *******************")));
+    }
 }
 
 } // namespace tiny_log

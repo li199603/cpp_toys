@@ -9,4 +9,6 @@ class Formatter
   public:
 };
 
+using FormatterPtr = std::shared_ptr<Formatter>;
+
 } // namespace tiny_log
